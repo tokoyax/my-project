@@ -8,4 +8,7 @@ doubleSmallNumber x = if x > 100
 
 doubleSmallNumber' x = (if x > 100 then x else x * 2) + 1
 
+
+-- リスト内包表記
 boomBangs xs = [ if x < 10 then "BOOM!!!" else "BANG!!!" | x <- xs, odd x]
+removeNonUppercase st = [ c | c <- st, c `elem` ['A'..'Z']]
