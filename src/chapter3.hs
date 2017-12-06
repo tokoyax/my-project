@@ -52,9 +52,14 @@ a `myCompare` b
   | a <= b    = LT
   | otherwise = GT
 
+-- page 44
+badGreeting :: String
+badGreeting = "Oh! Pffft. It's you."
+
+niceGreeting :: String
+niceGreeting = "Hello! So very nice to see you,"
+
 greet :: String -> String
 greet "Juan" = niceGreeting ++ " Juan!"
 greet "Fernando" = niceGreeting ++ " Fernando!"
 greet name = badGreeting ++ " " ++ name
-  where niceGreeting = "Hello! So very nice to see you,"
-        badGreeting = "Oh! Pffft. It's you."
