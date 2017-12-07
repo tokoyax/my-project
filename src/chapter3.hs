@@ -10,8 +10,8 @@ addVectors :: (Double, Double) -> (Double, Double) -> (Double, Double)
 addVectors (x1, y1) (x2, y2) = (x1 + x2, y1 + y2)
 
 head' :: [a] -> a
-head' [] = error "error."
-head' (x:_) = x
+head' xs = case xs of [] -> error "error."
+                      (x:_) -> x
 
 tell :: (Show a) => [a] -> String
 tell [] = "The list is empty"
@@ -77,3 +77,15 @@ cylinder r h =
     let sideArea = 2 * pi * r * h
         topArea = pi * r ^ 2
     in  sideArea + 2 * topArea
+
+describeList :: [a] -> String
+describeList ls = "The list is "
+                  ++ case ls of [] -> "empty."
+                                [x] -> "a singleton list."
+                                xs -> "a longer list."
+
+describeList' :: [a] -> String
+describeList' ls = "The list is " ++ what ls
+  where what [] = "empty."
+        what [x] = "a singleton list."
+        what xs = "a longer list."
