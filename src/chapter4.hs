@@ -35,4 +35,10 @@ elem' a (x:xs)
   | a == x    = True
   | otherwise = a `elem'` xs
 
-
+-- quick sort
+quicksort :: (Ord a) => [a] -> [a]
+quicksort [] = []
+quicksort (x:xs) =
+    let smallerOrEqual = [a | a <- xs, a <= x]
+        larger = [a | a <- xs, a > x]
+    in  quicksort smallerOrEqual ++ [x] ++ quicksort larger
