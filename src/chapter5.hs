@@ -88,3 +88,11 @@ filter' p = foldr (\x acc -> if p x then x : acc else acc) []
 
 last' :: [a] -> a
 last' = foldl1 (\_ x -> x)
+
+-- p81
+and' :: [Bool] -> Bool
+and' xs = foldr (&&) True xs
+
+-- p82
+sqrtSums :: Int
+sqrtSums = length (takeWhile (<1000) (scanl1 (+) (map sqrt [1..]))) + 1
