@@ -96,3 +96,7 @@ and' xs = foldr (&&) True xs
 -- p82
 sqrtSums :: Int
 sqrtSums = length (takeWhile (<1000) (scanl1 (+) (map sqrt [1..]))) + 1
+
+-- p87
+-- fn x = x ceiling (negate (tan (cos (max 50 x))))
+fn = ceiling . negate . tan . cos . max 50
