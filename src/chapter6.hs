@@ -1,5 +1,6 @@
 import Data.List
 import Data.Char
+import qualified Data.Map as Map
 
 numUniques :: (Eq a) => [a] -> Int
 numUniques = length . nub
@@ -21,3 +22,35 @@ digitSum = sum . map digitToInt . show
 
 firstTo :: Int -> Maybe Int
 firstTo n = find (\x -> digitSum x == n) [1..]
+
+phoneBook :: Map.Map String String
+phoneBook = Map.fromList $
+  [("betty", "555-2938")
+  ,("bonnie1", "334-8878")
+  ,("bonnie1", "334-8877")
+  ,("bonnie1", "334-8876")
+  ,("bonnie1", "334-8875")
+  ,("bonnie2", "334-8878")
+  ,("bonnie3", "334-8878")
+  ,("bonnie3", "335-8878")
+  ,("bonnie4", "334-8878")
+  ]
+
+-- findKey :: (Eq k) => k -> [(k, v)] -> v
+-- findKey key xs = snd . head . filter (\(k, v) -> key == k) $ xs
+
+--findKey :: (Eq k) => k -> [(k, v)] -> Maybe v
+--findKey [] = Nothing
+--findKey key ((k,v):xs)
+--  | key == k  = Just v
+--  | otherwise = findKey key xs
+
+findKey :: (Eq k) => k -> [(k, v)] -> Maybe v
+findKey key xs = foldr (\(k, v) acc -> if key == k then Just v else acc) Nothing xs
+
+string2digits :: String -> [Int]
+string2digits = map digitToInt . filter isDigit
+
+phoneBookToMap :: (Ord k) => [(k, String)] -> Map.Map k String
+phoneBookToMap xs = Map.fromListWith add xs
+  where add number1 number2 = number1 ++ ", " ++ number2
