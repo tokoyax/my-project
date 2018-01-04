@@ -23,8 +23,7 @@ digitSum = sum . map digitToInt . show
 firstTo :: Int -> Maybe Int
 firstTo n = find (\x -> digitSum x == n) [1..]
 
-phoneBook :: Map.Map String String
-phoneBook = Map.fromList $
+phoneBook =
   [("betty", "555-2938")
   ,("bonnie1", "334-8878")
   ,("bonnie1", "334-8877")
@@ -54,3 +53,4 @@ string2digits = map digitToInt . filter isDigit
 phoneBookToMap :: (Ord k) => [(k, String)] -> Map.Map k String
 phoneBookToMap xs = Map.fromListWith add xs
   where add number1 number2 = number1 ++ ", " ++ number2
+
