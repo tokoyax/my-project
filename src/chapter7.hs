@@ -53,3 +53,7 @@ data Person = Person String String Int Float String String deriving (Show)
 --                     , height :: Float
 --                     , phoneNumber :: String
 --                     , flavor :: String } deriving (Show)
+--
+
+data Day = Monday | Tuesday | Wednesday | Thursday | Friday | Saturday | Sunday
+            deriving (Eq, Ord, Show, Read, Bounded, Enum)
