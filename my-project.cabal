@@ -31,6 +31,7 @@ executable my-project-exe
   build-depends:       base
                      , my-project
                      , random
+                     , bytestring
   default-language:    Haskell2010
 
 test-suite my-project-test
