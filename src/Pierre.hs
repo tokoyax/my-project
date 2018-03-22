@@ -16,14 +16,20 @@ x -: f = f x
 banana :: Pole -> Maybe Pole
 banana _ = Nothing
 
+-- routine :: Maybe Pole
+-- routine = case landLeft 1 (0, 0) of
+--     Nothing -> Nothing
+--     Just pole1 -> case landRight 4 pole1 of
+--         Nothing -> Nothing
+--         Just pole2 -> case landLeft 2 pole2 of
+--             Nothing -> Nothing
+--             Just pole3 -> landLeft 1 pole3
+
 routine :: Maybe Pole
-routine = case landLeft 1 (0, 0) of
-    Nothing -> Nothing
-    Just pole1 -> case landRight 4 pole1 of
-        Nothing -> Nothing
-        Just pole2 -> case landLeft 2 pole2 of
-            Nothing -> Nothing
-            Just pole3 -> landLeft 1 pole3
-
-
+routine = do
+    start <- return (0, 0)
+    first <- landLeft 2 start
+    Nothing
+    second <- landRight 2 first
+    landLeft 1 second
 
