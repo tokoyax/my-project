@@ -32,6 +32,8 @@ executable my-project-exe
                      , my-project
                      , random
                      , bytestring
+                     , bytestring
+                     , mtl
   default-language:    Haskell2010
 
 test-suite my-project-test
