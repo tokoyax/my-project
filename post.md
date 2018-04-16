@@ -1,49 +1,82 @@
-## Reader
+## 計算の状態
 
-関数の型 `(->) r` はファンクターであり、アプリカティブファンクターであるばかりでなく、モナドでもある。
-関数にとっての文脈とは、値がまだ手元になく、値がほしければその関数を別の何かに適用しないといけない。
-というもの。
+状態を扱うためにHaskellにはStateモナドが用意されている。
+
+## 状態付きの計算
+
+状態付きの計算とは、ある状態を取って、更新された状態と一緒に計算結果を返す関数として表現できる。
 
 ```haskell
-instance Monad ((->) r) where
-    return x = \_ -> x
-    h >>= f = \w -> f (h w) w
+s -> (a, s)
 ```
 
-`return` は最小限の文脈。値を取って値を返す。引数を無視すると必ず同じ値を返す。
-`>>=`は、モナド値を入力してモナド値を返すので、ある関数を別の関数に入力した結果として関数を返す。
-この場合、f に h を適用している。
+s は状態の型で、 a は状態付き計算の結果。
+このような状態付きの計算も、文脈付きの値だとみなすことができる。
+計算の結果が「生の値」 であり、その計算結果を得るためには初期状態を与える必要があること、
+そして、計算の結果を得るのと同時に新しい状態が得られるというのが文脈にあたる。
 
-## Readerモナド
+## スタックと石
 
-関数モナドを使っている do 式
+stackデータ構造をモデル化する。
+
+* Push : スタックのてっぺんに要素を積む
+* Pop : スタックのてっぺんの要素を取り除く
 
 ```haskell
-import Control.Monad.Instances
+type Stack = [Int]
 
-addStuff :: Int -> Int
-addStuff = do
-    a <- (*2)
-    b <- (+10)
-    return (a+b)
+pop :: Stack -> (Int, Stack)
+pop (x:xs) = (x, xs)
+
+push :: Int -> Stack -> ((), Stack)
+push a xs = ((), a:xs)
+```
+
+スタックをシミュレートするコードを書く
+
+```haskell
+stackManip :: Stack -> (Int, Stack)
+stackManip stack = let
+    ((), newStack1) = push 3 stack
+    (a, newStack2) = pop newStack1
+    in pop newStack2
 ```
 
 実行
 
 ```
-*Main> addStuff 3
-19
+*Main> stackManip [5,8,2,1]
+(5,[8,2,1])
 ```
 
-do式は常にモナド値を生み出すもの。この場合、do式は関数モナドを返す。
-`(*2)`と`(+10)`はどちらも3に適用される。`return (a+b)`も3に適用されるが、
-引数を無視して常に`a+b`を返している。
+ところが、Stateモナドを使うと次のように書けちゃう
 
-関数モナドはReaderモナドと呼ばれている。全ての関数が共通の情報を読むから。
+```haskell
+stackManip = do
+    push 3
+    a <- pop
+    pop
+```
 
-最後の引数が届くのを待っている関数がたくさんあって、
-しかもそれらに渡したい値は全部同じという状況であればReaderモナドを使って未来の結果を取り出すことができる。
+## Stateモナド
 
-## 所感
+`Control.Monad.State`モジュールは、状態付き計算を包んだ newtype を提供している。
 
-さっぱりわからん。モナドをはじめから復習する必要がある。
+```haskell
+newtype State s a = State { runState :: s -> (a, s) }
+```
+
+`State s a` は s 型の状態を操り、a 型の結果を返す状態付き計算。
+
+状態付き計算のMonadインスタンス
+
+```haskell
+instance Monad (State s) where
+    return x = State $ \x -> (x, s)
+    (State h) >>= f = State $ \s -> let (a, newState) = h s
+                                        (State, g) = f a
+                                    in g newState
+```
+
+return は値を取って常にその値を結果として返すような状態付き計算。
+`>>=` は
