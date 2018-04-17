@@ -79,4 +79,24 @@ instance Monad (State s) where
 ```
 
 return は値を取って常にその値を結果として返すような状態付き計算。
-`>>=` は
+`>>=` は2つの状態付き計算を繋げられる。
+
+先程の処理をStateモナド使って書き換える
+
+```haskell
+import Control.Monad.State
+
+pop :: State Stack Int
+pop = state $ \(x:xs) -> (x, xs)
+
+push :: Int -> State Stack ()
+push a = state $ \xs -> ((), a:xs)
+
+stackManip :: State Stack Int
+stackManip = do
+    push 3
+    a <- pop
+    pop
+```
+
+
