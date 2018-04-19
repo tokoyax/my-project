@@ -1,35 +1,30 @@
+import           Control.Monad.Except
+
 type Birds = Int
 type Pole = (Birds, Birds)
 
-landLeft :: Birds -> Pole -> Maybe Pole
+landLeft :: Birds -> Pole -> Either String Pole
 landLeft n (left, right)
-    | abs ((left + n - right)) < 4 = Just (left + n, right)
-    | otherwise = Nothing
+    | abs (left + n - right) < 4 = Right (left + n, right)
+    | otherwise = Left $ birdsCount (left, right)
 
-landRight :: Birds -> Pole -> Maybe Pole
+landRight :: Birds -> Pole -> Either String Pole
 landRight n (left, right)
-    | abs (left - (right + n)) < 4 = Just (left, right + n)
-    | otherwise = Nothing
+    | abs (left - (right + n)) < 4 = Right (left, right + n)
+    | otherwise = Left $ birdsCount (left, right)
 
-x -: f = f x
+birdsCount :: Pole -> String
+birdsCount (left, right) = "Pierre fell off the rope!!" ++
+                            " birds on the left: " ++ show left ++
+                            ",birds on the right: " ++ show right
 
-banana :: Pole -> Maybe Pole
-banana _ = Nothing
+banana :: Pole -> Either String Pole
+banana p = Left $ birdsCount p
 
--- routine :: Maybe Pole
--- routine = case landLeft 1 (0, 0) of
---     Nothing -> Nothing
---     Just pole1 -> case landRight 4 pole1 of
---         Nothing -> Nothing
---         Just pole2 -> case landLeft 2 pole2 of
---             Nothing -> Nothing
---             Just pole3 -> landLeft 1 pole3
-
-routine :: Maybe Pole
+routine :: Either String Pole
 routine = do
     start <- return (0, 0)
     first <- landLeft 2 start
-    Nothing
     second <- landRight 2 first
     landLeft 1 second
 

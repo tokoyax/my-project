@@ -1,240 +1,134 @@
-## 計算の状態
+## Eitherモナド
 
-状態を扱うためにHaskellにはStateモナドが用意されている。
+Maybeモナドは値に失敗するかもしれないという文脈をつけられる。
+Eitherモナドも失敗の文脈を扱える。しかも、失敗に値を付加できるので失敗の説明ができたりする。
 
-## 状態付きの計算
+Either e a は、Right値であれば正解や計算の成功、Left値であれば失敗を表す。
 
-状態付きの計算とは、ある状態を取って、更新された状態と一緒に計算結果を返す関数として表現できる。
-
-```haskell
-s -> (a, s)
+```
+*Main Lib> :t Right 4
+Right 4 :: Num b => Either a b
+*Main Lib> :t Left "out of cheese error"
+Left "out of cheese error" :: Either [Char] b
 ```
 
-s は状態の型で、 a は状態付き計算の結果。
-このような状態付きの計算も、文脈付きの値だとみなすことができる。
-計算の結果が「生の値」 であり、その計算結果を得るためには初期状態を与える必要があること、
-そして、計算の結果を得るのと同時に新しい状態が得られるというのが文脈にあたる。
-
-## スタックと石
-
-stackデータ構造をモデル化する。
-
-* Push : スタックのてっぺんに要素を積む
-* Pop : スタックのてっぺんの要素を取り除く
+EitherのMonadインスタンスはMaybeとよく似ている。
+Control.Monad.Error モジュールで定義されている。
 
 ```haskell
-type Stack = [Int]
-
-pop :: Stack -> (Int, Stack)
-pop (x:xs) = (x, xs)
-
-push :: Int -> Stack -> ((), Stack)
-push a xs = ((), a:xs)
+instance (Error e) => Monad (Either e) where
+    return x = Right x
+    Right x >>= f = f x
+    Left err >>= f = Left err
+    fail msg = Left (strMsg msg)
 ```
 
-スタックをシミュレートするコードを書く
+Left e の e は、Error型クラスのインスタンスでないといけない。
+Error型クラスはエラーメッセージのように振る舞える型クラス。
+Error型クラスにはエラーを文字列として受け取って、その型に変換する strMsg 関数が定義されている。
 
-```haskell
-stackManip :: Stack -> (Int, Stack)
-stackManip stack = let
-    ((), newStack1) = push 3 stack
-    (a, newStack2) = pop newStack1
-    in pop newStack2
+モジュールロード時に以下内容の警告が出た。
+
 ```
+<interactive>:1:1: warning: [-Wdeprecations]
+    In the use of ‘strMsg’
+    (imported from Control.Monad.Error, but defined in transformers-0.5.2.0:Control.Monad.Trans.Error):
+    Deprecated: "Use Control.Monad.Trans.Except instead"
+strMsg :: Error a => String -> a
+```
+
+Control.Monad.Trans.Except を使ったほうがよさそうである。
+
+```
+strMsg :: Error a => String -> a
+```
+
+String を受け取って Error型に変換する
+
+Eitherを使ってみる
+
+```
+*Main Lib> Left "boom" >>= \x -> return (x+1)
+Left "boom"
+*Main Lib> Left "boom " >>= \x -> Left "no way!"
+Left "boom "
+*Main Lib> Right 100 >>= \x -> Left "no way!"
+Left "no way!"
+```
+
+Maybeぽい動きをしている。
+
+Right を成功する関数に渡すパターン
+
+```
+*Main Lib> Right 3 >>= \x -> return (x + 100)
+Right 103
+```
+
+成功した...
+
+本の中では型シグネチャが無いとエラーになると書いてあった
+
+```
+*Main Lib> Right 3 >>= \x -> return (x + 100) :: Either String Int
+Right 103
+```
+
+こんな感じで指定する
+
+以前やったピエールのバランス棒に何羽の鳥が止まっていたかわかるようにする。
+
+```
+import           Control.Monad.Except
+
+type Birds = Int
+type Pole = (Birds, Birds)
+
+landLeft :: Birds -> Pole -> Either String Pole
+landLeft n (left, right)
+    | abs (left + n - right) < 4 = Right (left + n, right)
+    | otherwise = Left $ birdsCount (left, right)
+
+landRight :: Birds -> Pole -> Either String Pole
+landRight n (left, right)
+    | abs (left - (right + n)) < 4 = Right (left, right + n)
+    | otherwise = Left $ birdsCount (left, right)
+
+birdsCount :: Pole -> String
+birdsCount (left, right) = "Pierre fell off the rope!!" ++
+                            " birds on the left: " ++ show left ++
+                            ",birds on the right: " ++ show right
+
+banana :: Pole -> Either String Pole
+banana p = Left $ birdsCount p
+
+routine :: Either String Pole
+routine = do
+    start <- return (0, 0)
+    first <- landLeft 2 start
+    second <- landRight 2 first
+    third <- landLeft 1 second
+    banana third
+```
+
+最終的にバナナで滑って落ちるようにした。
 
 実行
 
 ```
-*Main> stackManip [5,8,2,1]
-(5,[8,2,1])
+*Main> routine
+Left "Pierre fell off the rope!! birds on the left: 3,birds on the right: 2"
 ```
 
-ところが、Stateモナドを使うと次のように書けちゃう
-
-```haskell
-stackManip = do
-    push 3
-    a <- pop
-    pop
-```
-
-## Stateモナド
-
-`Control.Monad.State`モジュールは、状態付き計算を包んだ newtype を提供している。
-
-```haskell
-newtype State s a = State { runState :: s -> (a, s) }
-```
-
-`State s a` は s 型の状態を操り、a 型の結果を返す状態付き計算。
-
-状態付き計算のMonadインスタンス
-
-```haskell
-instance Monad (State s) where
-    return x = State $ \x -> (x, s)
-    (State h) >>= f = State $ \s -> let (a, newState) = h s
-                                        (State, g) = f a
-                                    in g newState
-```
-
-return は値を取って常にその値を結果として返すような状態付き計算。
-`>>=` は2つの状態付き計算を繋げられる。
-
-先程の処理をStateモナド使って書き換える
-
-```haskell
-import Control.Monad.State
-
-pop :: State Stack Int
-pop = state $ \(x:xs) -> (x, xs)
-
-push :: Int -> State Stack ()
-push a = state $ \xs -> ((), a:xs)
-
-stackManip :: State Stack Int
-stackManip = do
-    push 3
-    a <- pop
-    pop
-```
-
-実行
+最後のバナナを取り除き、落ちないパターン
 
 ```
-*Main> runState stackManip [5,8,2,1]
-(5,[8,2,1])
-```
-
-pop の結果 a は一度も使っていないのでこう書ける
-
-```haskell
-stackManip :: State Stack Int
-stackManip = do
-    push 3
-    pop
-    pop
-```
-
-もう少し複雑なスタックの処理を書く。
-スタック1つの数を取り出して、5だったら元に戻す。
-5ではなかった場合、3と8を積む。
-
-```haskell
-stackStuff :: State Stack ()
-stackStuff = do
-    a <- pop
-    if a == 5
-        then push 5
-        else do
-            push 3
-            push 8
-```
-
-実行
-
-```
-*Main> runState stackStuff [9,0,1,2,0]
-((),[8,3,0,1,2,0])
-```
-
-stackManip と stackStuff はどちらも状態付き計算なのでこの2つをつなげることができる。
-
-```haskell
-moreStack :: State Stack ()
-moreStack = do
-    a <- stackManip
-    if a == 100
-        then stackStuff
-        else return ()
-```
-
-実行
-
-```
-*Main> runState moreStack [100,9,3,6,22,1,0]
-((),[8,3,3,6,22,1,0])
-```
-
-## 状態の取得と設定
-
-Stateモナドを扱うための便利な型クラスMonadStateがある。
-get と put という関数が使える。
-
-get の実装
-
-```haskell
-get = state $ \s -> (s, s)
-```
-
-put の実装
-
-```haskell
-put newState = state $ \s -> ((), newState)
-```
-
-put と get を使う
-
-```haskell
-stackeyStack :: State Stack ()
-stackeyStack = do
-    stackNow <- get
-    if stackNow == [1,2,3]
-        then put [8,3,1]
-        else put [9,2,1]
-```
-
-get と put を使って pop と push を書き換える
-
-```haskell
-pop :: State Stack Int
-pop = do
-    (x:xs) <- get
-    put xs
-    return x
-
-push :: Int -> State Stack ()
-push x = do
-    xs <- get
-    put (x:xs)
-```
-
-## 乱数とStateモナド
-
-Stateモナド使って乱数を扱う処理を書く
-
-```haskell
-import System.Random
-import Control.Monad.State
-
-randomSt :: (RandomGen g, Random a) => State g a
-randomSt = state random
-```
-
-乱数ジェネレーターは状態付き計算であるので、state関数を使ってStateのnewtypeに包めば、
-状態の扱いをモナドに任せることができる。
-
-コインを3枚投げる処理はこう書けるようになる。
-
-```haskell
-threeCoins :: State StdGen (Bool, Bool, Bool)
-threeCoins = do
-    a <- randomSt
-    b <- randomSt
-    c <- randomSt
-    return (a, b, c)
-```
-
-実行
-
-```
-*Main> runState threeCoins (mkStdGen 33)
-((True,False,True),680029187 2103410263)
+*Main> routine
+Right (3,2)
 ```
 
 ## 所感
 
-だいたいわからん。複雑なモナドになるとコードが何してるかわからなくなる。
-とりあえず前に進むこととする。
+初めて自分の力で練習問題ができたように思う。嬉しい。
 
 
