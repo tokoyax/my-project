@@ -1,134 +1,119 @@
-## Eitherモナド
+## 便利なモナディック関数
 
-Maybeモナドは値に失敗するかもしれないという文脈をつけられる。
-Eitherモナドも失敗の文脈を扱える。しかも、失敗に値を付加できるので失敗の説明ができたりする。
+モナドを扱う関数はモナディック関数と呼ばれる。
 
-Either e a は、Right値であれば正解や計算の成功、Left値であれば失敗を表す。
+### liftM
 
-```
-*Main Lib> :t Right 4
-Right 4 :: Num b => Either a b
-*Main Lib> :t Left "out of cheese error"
-Left "out of cheese error" :: Either [Char] b
-```
-
-EitherのMonadインスタンスはMaybeとよく似ている。
-Control.Monad.Error モジュールで定義されている。
+関数とモナド値をとって、関数でモナド値を写してくれる。
+fmapっぽい。
 
 ```haskell
-instance (Error e) => Monad (Either e) where
-    return x = Right x
-    Right x >>= f = f x
-    Left err >>= f = Left err
-    fail msg = Left (strMsg msg)
+liftM :: Monad m => (a1 -> r) -> m a1 -> m r
 ```
 
-Left e の e は、Error型クラスのインスタンスでないといけない。
-Error型クラスはエラーメッセージのように振る舞える型クラス。
-Error型クラスにはエラーを文字列として受け取って、その型に変換する strMsg 関数が定義されている。
+fmap の型
 
-モジュールロード時に以下内容の警告が出た。
-
-```
-<interactive>:1:1: warning: [-Wdeprecations]
-    In the use of ‘strMsg’
-    (imported from Control.Monad.Error, but defined in transformers-0.5.2.0:Control.Monad.Trans.Error):
-    Deprecated: "Use Control.Monad.Trans.Except instead"
-strMsg :: Error a => String -> a
+```haskell
+fmap :: Functor f => (a -> b) -> f a -> f b
 ```
 
-Control.Monad.Trans.Except を使ったほうがよさそうである。
+ファンクター則とモナド則を満たしている場合、fmap と liftM はまったく同じものになる。
+
+liftM を試す
 
 ```
-strMsg :: Error a => String -> a
+*Main> liftM (*3) (Just 8)
+Just 24
+*Main> fmap (*3) (Just 8)
+Just 24
+*Main> runWriter $ liftM not $ writer (True, "chickpeas")
+(False,"chickpeas")
+*Main> runWriter $ fmap not $ writer (True, "chickpeas")
+(False,"chickpeas")
+*Main> runState (liftM (+100) pop) [1,2,3,4]
+(101,[2,3,4])
+*Main> runState (fmap (+100) pop) [1,2,3,4]
+(101,[2,3,4])
 ```
 
-String を受け取って Error型に変換する
+fmap と liftM は同じ動きしてる。
 
-Eitherを使ってみる
-
-```
-*Main Lib> Left "boom" >>= \x -> return (x+1)
-Left "boom"
-*Main Lib> Left "boom " >>= \x -> Left "no way!"
-Left "boom "
-*Main Lib> Right 100 >>= \x -> Left "no way!"
-Left "no way!"
-```
-
-Maybeぽい動きをしている。
-
-Right を成功する関数に渡すパターン
+次はアプリカティブ値
 
 ```
-*Main Lib> Right 3 >>= \x -> return (x + 100)
-Right 103
+*Main> (+) <$> Just 3 <*> Just 5
+Just 8
+*Main> (+) <$> Just 3 <*> Nothing
+Nothing
 ```
 
-成功した...
-
-本の中では型シグネチャが無いとエラーになると書いてあった
+`<$>`はただのfmap。`<*>`はこう
 
 ```
-*Main Lib> Right 3 >>= \x -> return (x + 100) :: Either String Int
-Right 103
+(<*>) :: (Applicative f) => f (a -> b) -> f a -> f b
 ```
 
-こんな感じで指定する
+fmap に似ているが、関数自身も文脈の中に入っている。
 
-以前やったピエールのバランス棒に何羽の鳥が止まっていたかわかるようにする。
+ap という関数があり、本質的には`<*>`と同じだが、Applicativeの代わりにMonad型クラス制約がついている。
 
-```
-import           Control.Monad.Except
-
-type Birds = Int
-type Pole = (Birds, Birds)
-
-landLeft :: Birds -> Pole -> Either String Pole
-landLeft n (left, right)
-    | abs (left + n - right) < 4 = Right (left + n, right)
-    | otherwise = Left $ birdsCount (left, right)
-
-landRight :: Birds -> Pole -> Either String Pole
-landRight n (left, right)
-    | abs (left - (right + n)) < 4 = Right (left, right + n)
-    | otherwise = Left $ birdsCount (left, right)
-
-birdsCount :: Pole -> String
-birdsCount (left, right) = "Pierre fell off the rope!!" ++
-                            " birds on the left: " ++ show left ++
-                            ",birds on the right: " ++ show right
-
-banana :: Pole -> Either String Pole
-banana p = Left $ birdsCount p
-
-routine :: Either String Pole
-routine = do
-    start <- return (0, 0)
-    first <- landLeft 2 start
-    second <- landRight 2 first
-    third <- landLeft 1 second
-    banana third
+```haskell
+ap :: (Monad m) => m (a -> b) -> m a -> m b
+ap mf m = do
+    f <- mf
+    x <- m
+    return (f x)
 ```
 
-最終的にバナナで滑って落ちるようにした。
+mf は結果が関数であるようなモナド値。
 
-実行
-
-```
-*Main> routine
-Left "Pierre fell off the rope!! birds on the left: 3,birds on the right: 2"
-```
-
-最後のバナナを取り除き、落ちないパターン
+使ってみる
 
 ```
-*Main> routine
-Right (3,2)
+*Main> Just (+3) <*> Just 4
+Just 7
+*Main> Just (+3) `ap` Just 4
+Just 7
+*Main> [(+1),(+2),(+3)] <*> [10,11]
+[11,12,12,13,13,14]
+*Main> [(+1),(+2),(+3)] `ap` [10,11]
+[11,12,12,13,13,14]
 ```
 
-## 所感
+モナドの威力は少なくともアプリカティブやファンクター以上である。
+すべてのモナドはファンクターでもアプリカティブでもあるのにそのインスタンスになっているとは限らない。
+また、ファンクターやアプリカティブファンクターが使う関数と等価なモナド版の関数が存在する。
 
-初めて自分の力で練習問題ができたように思う。嬉しい。
+### join
+
+任意の入れ子になったモナドは平らにできる。
+このために join がある。
+
+```haskell
+join :: (Monad m) => m (m a) -> m a
+```
+
+使ってみる
+
+```
+*Main> join (Just (Just 9))
+Just 9
+*Main> join (Just Nothing)
+Nothing
+*Main> join Nothing
+Nothing
+*Main> join [[1,2,3],[4,5,6]]
+[1,2,3,4,5,6]
+*Main> runWriter $ join (writer (writer (1, "aaa"), "bbb"))
+(1,"bbbaaa")
+*Main> join (Right (Right 9))
+Right 9
+*Main> join (Right (Left "error"))
+Left "error"
+*Main> join (Left "error")
+Left "error"
+*Main> runState (join (state $ \s -> (push 10, 1:2:s))) [0,0,0]
+((),[10,1,2,0,0,0])
+```
 
 

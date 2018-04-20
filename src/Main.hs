@@ -1,3 +1,3 @@
-import Shapes
-main = do
-  print $  nudge (baseCircle 30) 10 20
+import           Control.Monad
+import           Control.Monad.State
+import           Control.Monad.Writer.Lazy
