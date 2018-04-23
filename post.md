@@ -116,4 +116,126 @@ Left "error"
 ((),[10,1,2,0,0,0])
 ```
 
+### filterM
+
+filter関数は、Haskellプログラミングの米らしい。
+map は塩らしい。
+
+filterは述語とフィルタ対象のリストを取り、述語を満たす要素だけを残してくれる。
+
+```haskell
+filter :: (a -> Bool) -> [a] -> [a]
+```
+
+文脈を持った値を filterしたい場合、filterMを使う。Control.Monad モジュールに定義されている。
+
+```haskell
+filterM :: (Monad m) => (a -> m Bool) -> [a] -> m [a]
+```
+
+リストを取って、4より小さい要素だけを残す関数。
+
+```
+*Main> filter (\x -> x < 4) [9,1,5,2,10,3]
+[1,2,3]
+```
+
+True か False だけを返すのではなく、何をしたかのログを残すような述語を作る。
+
+```haskell
+import           Control.Monad.Writer.Lazy
+
+keepSmall :: Int -> Writer [String] Bool
+keepSmall x
+    | x < 4 = do
+        tell ["Keeping " ++ show x]
+        return True
+    | otherwise = do
+        tell [show x ++ " is too large, throwning it away"]
+        return False
+```
+
+実行
+
+```
+*Main> fst $ runWriter $ filterM keepSmall [9,1,5,2,10,3]
+[1,2,3]
+```
+
+ログを表示してみる
+
+```
+*Main> mapM_ putStrLn $ snd $ runWriter $ filterM keepSmall [9,1,5,2,10,3]
+9 is too large, throwning it away
+Keeping 1
+5 is too large, throwning it away
+Keeping 2
+10 is too large, throwning it away
+Keeping 3
+```
+
+filterM を使って冪集合を作る
+
+```haskell
+powerset :: [a] -> [a]
+powerset xs = filterM (\x -> [True, False]) xs
+```
+
+実行
+
+```
+*Main> powerset [1,2,3]
+[[1,2,3],[1,2],[1,3],[1],[2,3],[2],[3],[]]
+```
+
+### foldM
+
+foldl のモナド版が foldM
+
+foldl の型
+
+```haskell
+foldl :: (a -> b -> a) -> a -> [b] -> a
+```
+
+foldM の型
+
+```haskell
+foldM :: (Monad m) => (a -> b -> m a) -> a -> [b] -> m a
+```
+
+foldl 使ってみる
+
+```
+*Main> foldl (\acc x -> acc + x) 0 [2,8,3,1]
+14
+```
+
+整数のリストを加算したいが、リストのいずれかの要素が9より大きい場合、
+計算全体を失敗させたい。Maybeアキュムレータを返すようにする。
+
+```haskell
+import           Control.Monad
+
+binSmalls :: Int -> Int -> Maybe Int
+binSmalls acc x
+    | x > 9 = Nothing
+    | otherwise = Just (acc + x)
+```
+
+実行
+
+```
+*Main> foldM binSmalls 0 [2,8,3,1]
+Just 14
+*Main> foldM binSmalls 0 [2,11,3,1]
+Nothing
+```
+
+リストに9より大きい数が入っている場合、Nothingになっている。
+
+## 所感
+
+モナディック関数というかっこいい名前の関数を知った。
+
 
