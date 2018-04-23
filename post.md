@@ -1,241 +1,121 @@
-## 便利なモナディック関数
+#`# 安全な逆ポーランド記法電卓をつくる
 
-モナドを扱う関数はモナディック関数と呼ばれる。
-
-### liftM
-
-関数とモナド値をとって、関数でモナド値を写してくれる。
-fmapっぽい。
-
-```haskell
-liftM :: Monad m => (a1 -> r) -> m a1 -> m r
-```
-
-fmap の型
-
-```haskell
-fmap :: Functor f => (a -> b) -> f a -> f b
-```
-
-ファンクター則とモナド則を満たしている場合、fmap と liftM はまったく同じものになる。
-
-liftM を試す
-
-```
-*Main> liftM (*3) (Just 8)
-Just 24
-*Main> fmap (*3) (Just 8)
-Just 24
-*Main> runWriter $ liftM not $ writer (True, "chickpeas")
-(False,"chickpeas")
-*Main> runWriter $ fmap not $ writer (True, "chickpeas")
-(False,"chickpeas")
-*Main> runState (liftM (+100) pop) [1,2,3,4]
-(101,[2,3,4])
-*Main> runState (fmap (+100) pop) [1,2,3,4]
-(101,[2,3,4])
-```
-
-fmap と liftM は同じ動きしてる。
-
-次はアプリカティブ値
-
-```
-*Main> (+) <$> Just 3 <*> Just 5
-Just 8
-*Main> (+) <$> Just 3 <*> Nothing
-Nothing
-```
-
-`<$>`はただのfmap。`<*>`はこう
-
-```
-(<*>) :: (Applicative f) => f (a -> b) -> f a -> f b
-```
-
-fmap に似ているが、関数自身も文脈の中に入っている。
-
-ap という関数があり、本質的には`<*>`と同じだが、Applicativeの代わりにMonad型クラス制約がついている。
-
-```haskell
-ap :: (Monad m) => m (a -> b) -> m a -> m b
-ap mf m = do
-    f <- mf
-    x <- m
-    return (f x)
-```
-
-mf は結果が関数であるようなモナド値。
-
-使ってみる
-
-```
-*Main> Just (+3) <*> Just 4
-Just 7
-*Main> Just (+3) `ap` Just 4
-Just 7
-*Main> [(+1),(+2),(+3)] <*> [10,11]
-[11,12,12,13,13,14]
-*Main> [(+1),(+2),(+3)] `ap` [10,11]
-[11,12,12,13,13,14]
-```
-
-モナドの威力は少なくともアプリカティブやファンクター以上である。
-すべてのモナドはファンクターでもアプリカティブでもあるのにそのインスタンスになっているとは限らない。
-また、ファンクターやアプリカティブファンクターが使う関数と等価なモナド版の関数が存在する。
-
-### join
-
-任意の入れ子になったモナドは平らにできる。
-このために join がある。
-
-```haskell
-join :: (Monad m) => m (m a) -> m a
-```
-
-使ってみる
-
-```
-*Main> join (Just (Just 9))
-Just 9
-*Main> join (Just Nothing)
-Nothing
-*Main> join Nothing
-Nothing
-*Main> join [[1,2,3],[4,5,6]]
-[1,2,3,4,5,6]
-*Main> runWriter $ join (writer (writer (1, "aaa"), "bbb"))
-(1,"bbbaaa")
-*Main> join (Right (Right 9))
-Right 9
-*Main> join (Right (Left "error"))
-Left "error"
-*Main> join (Left "error")
-Left "error"
-*Main> runState (join (state $ \s -> (push 10, 1:2:s))) [0,0,0]
-((),[10,1,2,0,0,0])
-```
-
-### filterM
-
-filter関数は、Haskellプログラミングの米らしい。
-map は塩らしい。
-
-filterは述語とフィルタ対象のリストを取り、述語を満たす要素だけを残してくれる。
-
-```haskell
-filter :: (a -> Bool) -> [a] -> [a]
-```
-
-文脈を持った値を filterしたい場合、filterMを使う。Control.Monad モジュールに定義されている。
-
-```haskell
-filterM :: (Monad m) => (a -> m Bool) -> [a] -> m [a]
-```
-
-リストを取って、4より小さい要素だけを残す関数。
-
-```
-*Main> filter (\x -> x < 4) [9,1,5,2,10,3]
-[1,2,3]
-```
-
-True か False だけを返すのではなく、何をしたかのログを残すような述語を作る。
-
-```haskell
-import           Control.Monad.Writer.Lazy
-
-keepSmall :: Int -> Writer [String] Bool
-keepSmall x
-    | x < 4 = do
-        tell ["Keeping " ++ show x]
-        return True
-    | otherwise = do
-        tell [show x ++ " is too large, throwning it away"]
-        return False
-```
-
-実行
-
-```
-*Main> fst $ runWriter $ filterM keepSmall [9,1,5,2,10,3]
-[1,2,3]
-```
-
-ログを表示してみる
-
-```
-*Main> mapM_ putStrLn $ snd $ runWriter $ filterM keepSmall [9,1,5,2,10,3]
-9 is too large, throwning it away
-Keeping 1
-5 is too large, throwning it away
-Keeping 2
-10 is too large, throwning it away
-Keeping 3
-```
-
-filterM を使って冪集合を作る
-
-```haskell
-powerset :: [a] -> [a]
-powerset xs = filterM (\x -> [True, False]) xs
-```
-
-実行
-
-```
-*Main> powerset [1,2,3]
-[[1,2,3],[1,2],[1,3],[1],[2,3],[2],[3],[]]
-```
-
-### foldM
-
-foldl のモナド版が foldM
-
-foldl の型
-
-```haskell
-foldl :: (a -> b -> a) -> a -> [b] -> a
-```
-
-foldM の型
-
-```haskell
-foldM :: (Monad m) => (a -> b -> m a) -> a -> [b] -> m a
-```
-
-foldl 使ってみる
-
-```
-*Main> foldl (\acc x -> acc + x) 0 [2,8,3,1]
-14
-```
-
-整数のリストを加算したいが、リストのいずれかの要素が9より大きい場合、
-計算全体を失敗させたい。Maybeアキュムレータを返すようにする。
+前に作ったRPN電卓にエラー機能をつける。
 
 ```haskell
 import           Control.Monad
 
-binSmalls :: Int -> Int -> Maybe Int
-binSmalls acc x
-    | x > 9 = Nothing
-    | otherwise = Just (acc + x)
+solveRPN :: String -> Maybe Double
+solveRPN st = do
+    [result] <- foldM foldingFunction [] $ words st
+    return result
+
+foldingFunction :: [Double] -> String -> Maybe [Double]
+foldingFunction (x:y:ys) "*"    = return ((y * x):ys)
+foldingFunction (x:y:ys) "+"    = return ((y + x):ys)
+foldingFunction (x:y:ys) "-"    = return ((y - x):ys)
+foldingFunction xs numberString = liftM (:xs) (readMaybe numberString)
+
+readMaybe :: (Read a) => String -> Maybe a
+readMaybe st = case reads st of [(x, "")] -> Just x
+                                _         -> Nothing
 ```
 
 実行
 
 ```
-*Main> foldM binSmalls 0 [2,8,3,1]
-Just 14
-*Main> foldM binSmalls 0 [2,11,3,1]
+*Main> solveRPN "1 2 * 4 +"
+Just 6.0
+*Main> solveRPN "1 2 * 4 + 5 *"
+Just 30.0
+*Main> solveRPN "1 2 * 4"
+Nothing
+*Main> solveRPN "1 8 werasdfasdefih"
 Nothing
 ```
 
-リストに9より大きい数が入っている場合、Nothingになっている。
+## モナディック関数の合成
+
+第13章で `<=<` は関数合成によく似ているけど普通の関数 `a -> b` ではなく、
+`a -> m b` のようなモナディック関数に作用するということが書かれていた。
+
+```
+*Main> let f = (+1) . (*100)
+*Main> f 4
+401
+*Main> let g = (\x -> return (x+1)) <=< (\x -> return (x*100))
+*Main> Just 4 >>= g
+Just 401
+```
+
+複数の関数をリストに持っているとき、
+全部合成して1つの関数を作る場合は id をアキュムレータ、`.` を2引数関数として畳み込むとよい。
+
+```
+*Main> let f = foldr (.) id [(+8),(*100),(+1)]
+*Main> f 1
+208
+```
+
+モナディック関数も同じように合成できる。
+`.` の代わりに `<=<`、`id` の代わりに `return` を使うとよい。
+
+前にチェスのナイトを3手以内で移動できるかどうか判定するプログラムを改良する。
+
+```haskell
+import           Control.Monad
+
+type KnightPos = (Int, Int)
+
+moveKnight :: KnightPos -> [KnightPos]
+moveKnight (c,r) = do
+    (c', r') <- [(c+2,r-1),(c+2,r+1),(c-2,r-1),(c-2,r+1)
+                ,(c+1,r-2),(c+1,r+2),(c-1,r-2),(c-1,r+2)
+                ]
+    guard (c' `elem` [1..8] && r' `elem` [1..8])
+    return (c', r')
+
+in3 :: KnightPos -> [KnightPos]
+in3 start = do
+    first <- moveKnight start
+    second <- moveKnight first
+    moveKnight second
+
+canReachIn3 :: KnightPos -> KnightPos -> Bool
+canReachIn3 start end = end `elem` in3 start
+```
+
+モナディックに合成して、より一般化する
+
+```haskell
+import           Control.Monad
+import           Data.List
+
+type KnightPos = (Int, Int)
+
+moveKnight :: KnightPos -> [KnightPos]
+moveKnight (c,r) = do
+    (c', r') <- [(c+2,r-1),(c+2,r+1),(c-2,r-1),(c-2,r+1)
+                ,(c+1,r-2),(c+1,r+2),(c-1,r-2),(c-1,r+2)
+                ]
+    guard (c' `elem` [1..8] && r' `elem` [1..8])
+    return (c', r')
+
+inMany :: Int -> KnightPos -> [KnightPos]
+inMany x start = return start >>= foldr (<=<) return (replicate x moveKnight)
+
+canReachIn :: Int -> KnightPos -> KnightPos -> Bool
+canReachIn x start end = end `elem` inMany x start
+
+```
+
+実行
+
+```
+*Main> canReachIn 5 (0,0) (8,3)
+True
+```
 
 ## 所感
 
-モナディック関数というかっこいい名前の関数を知った。
-
-
+文脈もたせたまま処理できる術がちゃんと用意されている。使えるようになるまでは時間かかりそうである。
