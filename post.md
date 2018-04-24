@@ -1,141 +1,134 @@
-## モナドを作る
+## Zipper
 
-モナドは作りたいと思って作るものではない。
-ある問題の側面をモデル化した型を作り、
-後からその型が文脈付きの値を表現していてモナドのように振る舞うとわかった場合に、
-Monadインスタンスを与える場合が多い。
+Haskellで木構造の要素を変更したい場合、ルート要素から指定の要素が見つかるまで探索が必要になる。
+また、前回更新した要素の近くの要素を更新したい場合などでもルートから探す必要がある。
+これは効率が悪い。
 
-リスト [3,5,9] を、整数3, 5, 9が同時に存在している状態だとすると、
-それぞれの数の存在確率の情報が足りないと気づく。
+そこでZipperを使ってデータ構造の要素の更新を簡単にする。
 
-確率も含めて表現するとこう、
+## 歩く
 
-```
-[(3,0.5),(5,0.25),(9,0.25)]
-```
-
-数学では確率は0から1までの実数で表現する。
-確率を浮動小数で表現した場合、すぐに精度が落ちて困る。
-そのため、Haskellには分数のためのデータ型がある。
-Rationalと呼ばれる、Data.Ratioモジュールにある。
-分子と分母は`%`記号で区切る。
-
-```
-*Main Data.Ratio> 1%4
-1 % 4
-*Main Data.Ratio> 1%2 + 1%2
-1 % 1
-*Main Data.Ratio> 1%3 + 5%4
-19 % 12
-```
-
-確率をRationalで表す。
-
-```
-*Main Data.Ratio> [(3,1%2),(5,1%4),(9,1%4)]
-[(3,1 % 2),(5,1 % 4),(9,1 % 4)]
-```
-
-これを newtype で新しい型に包む
+木構造のデータ型を定義する
 
 ```haskell
-import Data.Ratio
-
-newtype Prob a = Prob { getProb :: [(a, Rational)] } deriving Show
+data Tree a = Empty | Node a (Tree a) (Tree a) deriving (Show)
 ```
 
-リストはファンクターであるので、Probもファンクターになれる。
+木構造データを定義する
 
 ```haskell
-instance Functor Prob where
-    fmap f (Prob xs) = Prob $ map (\(x, p) -> (f x, p)) xs
+freeTree :: Tree Char
+freeTree =
+    Node 'P'
+        (Node 'O'
+            (Node 'L'
+                (Node 'N' Empty Empty)
+                (Node 'T' Empty Empty)
+            )
+            (Node 'Y'
+                (Node 'S' Empty Empty)
+                (Node 'A' Empty Empty)
+            )
+        )
+        (Node 'L'
+            (Node 'W'
+                (Node 'C' Empty Empty)
+                (Node 'R' Empty Empty)
+            )
+            (Node 'A'
+                (Node 'A' Empty Empty)
+                (Node 'C' Empty Empty)
+            )
+        )
 ```
 
-動作させてみる
-
-```
-*Main Data.Ratio> fmap negate (Prob [(-3,1 % 2),(-5,1 % 4),(-9,1 % 4)])
-Prob {getProb = [(3,1 % 2),(5,1 % 4),(9,1 % 4)]}
-```
-
-確率の総和は常に1である。
-
-これはモナドかどうか考える。
-まず、return について。リストのreturnは値を取って単一要素のリストに入れる関数。
-Probの場合も、単一要素を作るっぽい。確率は、1。
-`>>=`は、`m >>= f` と `join (fmap f m)` が等価であることを使って確率リストを平らにすることを考える。
-
-'a','b'が起こる確率が25%,'c','d'が起こる確率が75%とした場合の状況を確率リストで表す。
+'W' を 'P' に変更する関数
 
 ```haskell
-thisSituation :: Prob (Prob Char)
-thisSituation = Prob
-    [(Prob [('a',1%2),('b', 1%2)], 1%4)
-    ,(Prob [('c',1%2),('d', 1%2)], 3%4)
-    ]
+changeToP :: Tree Char -> Tree Char
+changeToP (Node x l (Node y (Node _ m n) r)) = Node x l (Node y (Node 'P' m n) r)
 ```
 
-型が `Prob (Prob Char)`と入れ子になっている。これを平らにする。
+どう考えてもわかりにくい。
+
+関数が方向のリストをとれるようにしてみる。
+方向とはLかRのいずれかで、左と右に対応し、方向指示に従ってたどり着いた位置の値を更新する。
 
 ```haskell
-flatten :: Prob (Prob a) -> Prob a
-flatten (Prob xs) = Prob $ concat $ map multAll xs
-    where multAll (Prob innerxs, p) = map (\(x, r) -> (x, p*r)) innerxs
+data Direction = L | R deriving (Show)
+type Directions = [Direction]
+
+changeToP :: Directions -> Tree Char -> Tree Char
+changeToP (L:ds) (Node x l r) = Node x (changeToP ds l) r
+changeToP (R:ds) (Node x l r) = Node x l (changeToP ds r)
+changeToP [] (Node _ l r)     = Node 'P' l r
 ```
 
-関数 multAll は、確率リストとある確率pのタプルをとって、
-リストの中の確率をp倍して、事象と確率の組のリストを返す関数。
+方向リストに基づいて探索する要素を選択している。
 
-flatten は、multAll を入れ子確率リストの各要素を適用してまわり、
-得られた入れ子リストを最後にリストとして平らにする。
-
-Monadインスタンスを書く。(Applicativeも書かないとGHCがエラー出す)
-
-参考 : https://qiita.com/Aruneko/items/e72f7c6ee49159751cba
+方向リストをとって目的地にある要素を返す関数
 
 ```haskell
-instance Applicative Prob where
-    pure x = Prob [(x,1%1)]
-
-instance Monad Prob where
-    return x = Prob [(x,1%1)]
-    m >>= f = flatten (fmap f m)
-    fail _ = Prob []
-```
-
-モナドインスタンスが手に入ったので、
-確率計算をするプログラムを書く。
-普通のコインが2枚と、10回投げると9回裏がでるよう細工されたコイン1枚を全部同時に投げて、
-全部裏が出る確率をもとめる。
-
-```haskell
-data Coin = Heads | Tails deriving (Show, Eq)
-
-coin :: Prob Coin
-coin = Prob [(Heads,1%2),(Tails,1%2)]
-
-loadedCoin :: Prob Coin
-loadedCoin = Prob [(Heads,1%10),(Tails,9%10)]
-
-flipThree :: Prob Bool
-flipThree = do
-    a <- coin
-    b <- coin
-    c <- loadedCoin
-    return (all (==Tails) [a,b,c])
+elemAt :: Directions -> Tree a -> a
+elemAt (L:ds) (Node _ l _) = elemAt ds l
+elemAt (R:ds) (Node _ _ r) = elemAt ds r
+elemAt [] (Node x _ _)     = x
 ```
 
 実行
 
 ```
-*Main Data.Ratio> getProb flipThree
-[(False,1 % 40),(False,9 % 40),(False,1 % 40),(False,9 % 40),(False,1 % 40),(False,9 % 40),(False,1 % 40),(True,9 % 40)]
+*Main> newTree = changeToP [R,L] freeTree
+*Main> elemAt [R,L] newTree
+'P'
 ```
 
-3枚とも裏が出る確率は、9/40になる。
+変わってる。
 
-## 所感
+方向リストは木の特定の部分木、注目点を指定する役割を果たしている。
+ただし、この方法は何度も要素を更新したい場合に効率が悪い。
 
-自分で書ける気がしない。
+### 背後に残った道しるべ
+
+要素を探す時にパンくずを残していって、往路の履歴を覚えておくようにする。
+すると逆方向の移動ができるようになる。
+
+```haskell
+type Breadcrumbs = [Direction]
+
+goLeft :: (Tree a, Breadcrumbs) -> (Tree a, Breadcrumbs)
+goLeft (Node _ l _, bs) = (l, L:bs)
+
+goRight :: (Tree a, Breadcrumbs) -> (Tree a, Breadcrumbs)
+goRight (Node _ _ r, bs) = (r, R:bs)
+```
+
+木とパンくずリストを受け取って、
+探索した方向の木と方向を追記したパンくずリストを返す関数。
+
+使ってみる
+
+```
+*Main> goLeft $ goRight (freeTree, [])
+(Node 'W' (Node 'C' Empty Empty) (Node 'R' Empty Empty),[L,R])
+```
+
+いい感じに書くためにいい感じの関数を定義する
+
+```haskell
+x -: f = f x
+```
+
+パイプラインみたいにこうかける
+
+```
+*Main> (freeTree, []) -: goRight -: goLeft
+(Node 'W' (Node 'C' Empty Empty) (Node 'R' Empty Empty),[L,R])
+```
+
+### 来た道を戻る方法
+
+今のパンくずリストでは来た道を戻るための情報が足りていない。
+辿った木構造の情報もパンくずリストに持っておく必要がある。
 
 
