@@ -1,121 +1,141 @@
-#`# 安全な逆ポーランド記法電卓をつくる
+## モナドを作る
 
-前に作ったRPN電卓にエラー機能をつける。
+モナドは作りたいと思って作るものではない。
+ある問題の側面をモデル化した型を作り、
+後からその型が文脈付きの値を表現していてモナドのように振る舞うとわかった場合に、
+Monadインスタンスを与える場合が多い。
+
+リスト [3,5,9] を、整数3, 5, 9が同時に存在している状態だとすると、
+それぞれの数の存在確率の情報が足りないと気づく。
+
+確率も含めて表現するとこう、
+
+```
+[(3,0.5),(5,0.25),(9,0.25)]
+```
+
+数学では確率は0から1までの実数で表現する。
+確率を浮動小数で表現した場合、すぐに精度が落ちて困る。
+そのため、Haskellには分数のためのデータ型がある。
+Rationalと呼ばれる、Data.Ratioモジュールにある。
+分子と分母は`%`記号で区切る。
+
+```
+*Main Data.Ratio> 1%4
+1 % 4
+*Main Data.Ratio> 1%2 + 1%2
+1 % 1
+*Main Data.Ratio> 1%3 + 5%4
+19 % 12
+```
+
+確率をRationalで表す。
+
+```
+*Main Data.Ratio> [(3,1%2),(5,1%4),(9,1%4)]
+[(3,1 % 2),(5,1 % 4),(9,1 % 4)]
+```
+
+これを newtype で新しい型に包む
 
 ```haskell
-import           Control.Monad
+import Data.Ratio
 
-solveRPN :: String -> Maybe Double
-solveRPN st = do
-    [result] <- foldM foldingFunction [] $ words st
-    return result
+newtype Prob a = Prob { getProb :: [(a, Rational)] } deriving Show
+```
 
-foldingFunction :: [Double] -> String -> Maybe [Double]
-foldingFunction (x:y:ys) "*"    = return ((y * x):ys)
-foldingFunction (x:y:ys) "+"    = return ((y + x):ys)
-foldingFunction (x:y:ys) "-"    = return ((y - x):ys)
-foldingFunction xs numberString = liftM (:xs) (readMaybe numberString)
+リストはファンクターであるので、Probもファンクターになれる。
 
-readMaybe :: (Read a) => String -> Maybe a
-readMaybe st = case reads st of [(x, "")] -> Just x
-                                _         -> Nothing
+```haskell
+instance Functor Prob where
+    fmap f (Prob xs) = Prob $ map (\(x, p) -> (f x, p)) xs
+```
+
+動作させてみる
+
+```
+*Main Data.Ratio> fmap negate (Prob [(-3,1 % 2),(-5,1 % 4),(-9,1 % 4)])
+Prob {getProb = [(3,1 % 2),(5,1 % 4),(9,1 % 4)]}
+```
+
+確率の総和は常に1である。
+
+これはモナドかどうか考える。
+まず、return について。リストのreturnは値を取って単一要素のリストに入れる関数。
+Probの場合も、単一要素を作るっぽい。確率は、1。
+`>>=`は、`m >>= f` と `join (fmap f m)` が等価であることを使って確率リストを平らにすることを考える。
+
+'a','b'が起こる確率が25%,'c','d'が起こる確率が75%とした場合の状況を確率リストで表す。
+
+```haskell
+thisSituation :: Prob (Prob Char)
+thisSituation = Prob
+    [(Prob [('a',1%2),('b', 1%2)], 1%4)
+    ,(Prob [('c',1%2),('d', 1%2)], 3%4)
+    ]
+```
+
+型が `Prob (Prob Char)`と入れ子になっている。これを平らにする。
+
+```haskell
+flatten :: Prob (Prob a) -> Prob a
+flatten (Prob xs) = Prob $ concat $ map multAll xs
+    where multAll (Prob innerxs, p) = map (\(x, r) -> (x, p*r)) innerxs
+```
+
+関数 multAll は、確率リストとある確率pのタプルをとって、
+リストの中の確率をp倍して、事象と確率の組のリストを返す関数。
+
+flatten は、multAll を入れ子確率リストの各要素を適用してまわり、
+得られた入れ子リストを最後にリストとして平らにする。
+
+Monadインスタンスを書く。(Applicativeも書かないとGHCがエラー出す)
+
+参考 : https://qiita.com/Aruneko/items/e72f7c6ee49159751cba
+
+```haskell
+instance Applicative Prob where
+    pure x = Prob [(x,1%1)]
+
+instance Monad Prob where
+    return x = Prob [(x,1%1)]
+    m >>= f = flatten (fmap f m)
+    fail _ = Prob []
+```
+
+モナドインスタンスが手に入ったので、
+確率計算をするプログラムを書く。
+普通のコインが2枚と、10回投げると9回裏がでるよう細工されたコイン1枚を全部同時に投げて、
+全部裏が出る確率をもとめる。
+
+```haskell
+data Coin = Heads | Tails deriving (Show, Eq)
+
+coin :: Prob Coin
+coin = Prob [(Heads,1%2),(Tails,1%2)]
+
+loadedCoin :: Prob Coin
+loadedCoin = Prob [(Heads,1%10),(Tails,9%10)]
+
+flipThree :: Prob Bool
+flipThree = do
+    a <- coin
+    b <- coin
+    c <- loadedCoin
+    return (all (==Tails) [a,b,c])
 ```
 
 実行
 
 ```
-*Main> solveRPN "1 2 * 4 +"
-Just 6.0
-*Main> solveRPN "1 2 * 4 + 5 *"
-Just 30.0
-*Main> solveRPN "1 2 * 4"
-Nothing
-*Main> solveRPN "1 8 werasdfasdefih"
-Nothing
+*Main Data.Ratio> getProb flipThree
+[(False,1 % 40),(False,9 % 40),(False,1 % 40),(False,9 % 40),(False,1 % 40),(False,9 % 40),(False,1 % 40),(True,9 % 40)]
 ```
 
-## モナディック関数の合成
-
-第13章で `<=<` は関数合成によく似ているけど普通の関数 `a -> b` ではなく、
-`a -> m b` のようなモナディック関数に作用するということが書かれていた。
-
-```
-*Main> let f = (+1) . (*100)
-*Main> f 4
-401
-*Main> let g = (\x -> return (x+1)) <=< (\x -> return (x*100))
-*Main> Just 4 >>= g
-Just 401
-```
-
-複数の関数をリストに持っているとき、
-全部合成して1つの関数を作る場合は id をアキュムレータ、`.` を2引数関数として畳み込むとよい。
-
-```
-*Main> let f = foldr (.) id [(+8),(*100),(+1)]
-*Main> f 1
-208
-```
-
-モナディック関数も同じように合成できる。
-`.` の代わりに `<=<`、`id` の代わりに `return` を使うとよい。
-
-前にチェスのナイトを3手以内で移動できるかどうか判定するプログラムを改良する。
-
-```haskell
-import           Control.Monad
-
-type KnightPos = (Int, Int)
-
-moveKnight :: KnightPos -> [KnightPos]
-moveKnight (c,r) = do
-    (c', r') <- [(c+2,r-1),(c+2,r+1),(c-2,r-1),(c-2,r+1)
-                ,(c+1,r-2),(c+1,r+2),(c-1,r-2),(c-1,r+2)
-                ]
-    guard (c' `elem` [1..8] && r' `elem` [1..8])
-    return (c', r')
-
-in3 :: KnightPos -> [KnightPos]
-in3 start = do
-    first <- moveKnight start
-    second <- moveKnight first
-    moveKnight second
-
-canReachIn3 :: KnightPos -> KnightPos -> Bool
-canReachIn3 start end = end `elem` in3 start
-```
-
-モナディックに合成して、より一般化する
-
-```haskell
-import           Control.Monad
-import           Data.List
-
-type KnightPos = (Int, Int)
-
-moveKnight :: KnightPos -> [KnightPos]
-moveKnight (c,r) = do
-    (c', r') <- [(c+2,r-1),(c+2,r+1),(c-2,r-1),(c-2,r+1)
-                ,(c+1,r-2),(c+1,r+2),(c-1,r-2),(c-1,r+2)
-                ]
-    guard (c' `elem` [1..8] && r' `elem` [1..8])
-    return (c', r')
-
-inMany :: Int -> KnightPos -> [KnightPos]
-inMany x start = return start >>= foldr (<=<) return (replicate x moveKnight)
-
-canReachIn :: Int -> KnightPos -> KnightPos -> Bool
-canReachIn x start end = end `elem` inMany x start
-
-```
-
-実行
-
-```
-*Main> canReachIn 5 (0,0) (8,3)
-True
-```
+3枚とも裏が出る確率は、9/40になる。
 
 ## 所感
 
-文脈もたせたまま処理できる術がちゃんと用意されている。使えるようになるまでは時間かかりそうである。
+自分で書ける気がしない。
+
+
