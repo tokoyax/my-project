@@ -131,4 +131,281 @@ x -: f = f x
 今のパンくずリストでは来た道を戻るための情報が足りていない。
 辿った木構造の情報もパンくずリストに持っておく必要がある。
 
+1つのパンくずには親ノードを構築するのに必要なすべてのデータを蓄えておく必要がある。
+辿る可能性のあった経路の情報も必要。
 
+パンくずリストを改良する。
+Direction に代わる新しいデータ型を作る。
+
+```haskell
+data Crumb a = LeftCrumb a (Tree a) | RightCrumb a (Tree a) deriving (Show)
+```
+
+移動元に含まれていた要素と、辿らなかった部分木を持つようになっている。
+L の代わりに LeftCrumb、R の代わりに RightCrumb となっている。
+
+このデータ型を使ってプログラムを書き換える
+
+```haskell
+type Breadcrumbs a = [Crumb a]
+
+goLeft :: (Tree a, Breadcrumbs a) -> (Tree a, Breadcrumbs a)
+goLeft (Node x l r, bs) = (l, LeftCrumb x r:bs)
+
+goRight :: (Tree a, Breadcrumbs a) -> (Tree a, Breadcrumbs a)
+goRight (Node x l r, bs) = (r, RightCrumb x l:bs)
+
+goUp :: (Tree a, Breadcrumbs a) -> (Tree a, Breadcrumbs a)
+goUp (t, LeftCrumb x r:bs)  = (Node x t r, bs)
+goUp (t, RightCrumb x l:bs) = (Node x l t, bs)
+```
+
+上に上がる処理も追加している。
+
+あるデータ構造の注目点、および周辺の情報を含んでいるデータ構造のことをZipperという。
+型シノニムを定義する。
+
+```haskell
+type Zipper a = (Tree a, Breadcrumbs a)
+```
+
+### 注目している木を操る
+
+Zipperが注目している部分木のルート要素を書き換える関数を書く
+
+```haskell
+modify :: (a -> a) -> Zipper a -> Zipper a
+modify f (Node x l r, bs) = (Node (f x) l r, bs)
+modify f (Empty, bs)      = (Empty, bs)
+```
+
+実行
+
+```
+*Main> newFocus = (freeTree, []) -: goLeft -: goRight -: modify (\_ -> 'P')
+*Main> newFocus
+(Node 'P' (Node 'S' Empty Empty) (Node 'A' Empty Empty),[RightCrumb 'O' (Node 'L' (Node 'N' Empty Empty) (Node 'T' Empty Empty)),LeftCrumb 'P' (Node 'L' (Node 'W' (Node 'C' Empty Empty) (Node 'R' Empty Empty)) (Node 'A' (Node 'A' Empty Empty) (Node 'C' Empty Empty)))])
+```
+
+1つ上に移動し 'X' に置き換え
+
+```
+*Main> newFocus2 = newFocus -: goUp -: modify (\_ -> 'X')
+*Main> newFocus2
+(Node 'X' (Node 'L' (Node 'N' Empty Empty) (Node 'T' Empty Empty)) (Node 'P' (Node 'S' Empty Empty) (Node 'A' Empty Empty)),[LeftCrumb 'P' (Node 'L' (Node 'W' (Node 'C' Empty Empty) (Node 'R' Empty Empty)) (Node 'A' (Node 'A' Empty Empty) (Node 'C' Empty Empty)))])
+```
+
+部分木を継ぎ足す操作を作る
+
+```haskell
+attach :: Tree a -> Zipper a -> Zipper a
+attach t (_, bs) = (t, bs)
+```
+
+これは、空の部分木に対して新しい部分木を追加するだけでなく既存の部分木を置換もできる。
+
+```
+*Main> farLeft = (freeTree, []) -: goLeft -: goLeft -: goLeft -: goLeft
+*Main> newFocus = farLeft -: attach (Node 'Z' Empty Empty)
+*Main> newFocus
+(Node 'Z' Empty Empty,[LeftCrumb 'N' Empty,LeftCrumb 'L' (Node 'T' Empty Empty),LeftCrumb 'O' (Node 'Y' (Node 'S' Empty Empty) (Node 'A' Empty Empty)),LeftCrumb 'P' (Node 'L' (Node 'W' (Node 'C' Empty Empty) (Node 'R' Empty Empty)) (Node 'A' (Node 'A' Empty Empty) (Node 'C' Empty Empty)))])
+```
+
+goUpでルートまで戻ると新しい木が取得できる。
+
+### 木のてっぺんまで戻る
+
+木のてっぺんに戻る関数
+
+```haskell
+topMost :: Zipper a -> Zipper a
+topMost (t, []) = (t, [])
+topMost z       = topMost (goUp z)
+```
+
+てっぺんに着くまで再帰で辿る
+
+```
+*Main> farLeft = (freeTree, []) -: goLeft -: goLeft -: goLeft -: goLeft
+*Main> newFocus = farLeft -: attach (Node 'Z' Empty Empty)
+*Main> topMost newFocus
+(Node 'P' (Node 'O' (Node 'L' (Node 'N' (Node 'Z' Empty Empty) Empty) (Node 'T' Empty Empty)) (Node 'Y' (Node 'S' Empty Empty) (Node 'A' Empty Empty))) (Node 'L' (Node 'W' (Node 'C' Empty Empty) (Node 'R' Empty Empty)) (Node 'A' (Node 'A' Empty Empty) (Node 'C' Empty Empty))),[])
+```
+
+てっぺんに着いている
+
+## リストに注目する
+
+リストのZipperを作る
+
+```haskell
+type ListZipper a = ([a], [a])
+
+goFoward :: ListZipper a -> ListZipper a
+goFoward (x:xs, bs) = (xs, x:bs)
+
+goBack :: ListZipper a -> ListZipper a
+goBack (xs, b:bs) = (b:xs, bs)
+```
+
+実行
+
+```
+*Main> xs = [1,2,3,4]
+*Main> goFoward (xs, [])
+([2,3,4],[1])
+*Main> goFoward ([2,3,4], [1])
+([3,4],[2,1])
+*Main> goFoward ([3,4], [2,1])
+([4],[3,2,1])
+*Main> goBack ([4], [3,2,1])
+([3,4],[2,1])
+```
+
+## シンプルなファイルシステム
+
+ごく単純化したファイルシステムを木で表現する。
+そのファイルシステムに対するZipperを作り、本物のファイルシステムみたいにフォルダ間を移動できるようにする。
+
+* ファイル : 名前がついていて、データが入っている
+* フォルダ : 名前がついていて、複数のファイルやフォルダをアイテムとして含む
+
+データ型を作る
+
+```haskell
+type Name = String
+type Data = String
+data FSItem = File Name Data | Folder Name [FSItem] deriving (Show)
+```
+
+フォルダのサンプル
+
+```haskell
+myDisk :: FSItem
+myDisk =
+    Folder "root"
+    [ File "goat_yelling_like_man.wmv" "baaaaaa"
+    , File "pope_time.avi" "god bless"
+    , Folder "pics"
+        [ File "ape_throwing_up.jpg" "bleargh"
+        , File "watermelon_smash.gif" "smash!!"
+        , File "skull_man(scary).bmp" "Yikes!"
+        ]
+    , File "dijon_poupon.doc" "best mustard"
+    , Folder "programs"
+        [ File "fartwizard.exe" "10gotofart"
+        , File "owl_bandit.dmg" "mov eax, h00t"
+        , File "not_a_virus.exe" "really not a virus"
+        , Folder "source code"
+            [ File "best_hs_prog.hs" "main = print (fix error)"
+            , File "random.hs" "main = print 4"
+            ]
+        ]
+    ]
+```
+
+Zipperを作る
+
+パンくずリストのデータ型を定義
+
+```haskell
+data FSCrumb = FSCrumb Name [FSItem] [FSItem] deriving (Show)
+```
+
+Zipperの定義
+
+```haskell
+type FSZipper = (FSItem, [FSCrumb])
+```
+
+階層構造を上に戻る関数
+
+```haskell
+fsUp :: FSZipper -> FSZipper
+fsUp (item, FSCrumb name ls rs:bs) = (Folder name (ls ++ [item] ++ rs), bs)
+```
+
+パンくずには、フォルダの名前、フォルダの中で注目点より前にあったアイテムのリスト(ls)、
+注目点より後ろにあったアイテムのリスト(rs) が全部入っている。
+
+フォルダの中にあるファイルまたはフォルダに注目点を移す関数
+
+```haskell
+import           Data.List
+
+fsTo :: Name -> FSZipper -> FSZipper
+fsTo name (Folder folderName items, bs) = let (ls, item:rs) = break (nameIs name) items
+                                          in  (item, FSCrumb folderName ls rs:bs)
+
+nameIs :: Name -> FSItem -> Bool
+nameIs name (Folder folderName _) = name == folderName
+nameIs name (File fileName _)     = name == fileName
+```
+
+break は述語とリストを引数にとり、リストのペアを返す。
+述語がFalseを返すような要素が第一要素に入る。
+ここで、探していたものより前にあるか後ろにあるかを振り分けている。
+
+実際に移動してみる
+
+```
+*Main> newFocus = (myDisk, []) -: fsTo "pics" -: fsTo "skull_man(scary).bmp"
+*Main> fst newFocus
+File "skull_man(scary).bmp" "Yikes!"
+```
+
+そのまま上に戻って、別のファイルを見る
+
+```
+*Main> newFocus2 = newFocus -: fsUp -: fsTo "watermelon_smash.gif"
+*Main> fst newFocus2
+File "watermelon_smash.gif" "smash!!"
+```
+
+### ファイルシステムの操作
+
+リネーム関数
+
+```haskell
+fsRename :: Name -> FSZipper -> FSZipper
+fsRename newName (Folder name items, bs) = (Folder newName items, bs)
+fsRename newName (File name dat, bs)     = (File newName dat, bs)
+```
+
+"pics" フォルダの名前を "cspi" に変更
+
+```
+*Main> newFocus = (myDisk, []) -: fsTo "pics" -: fsRename "cspi" -: fsUp
+*Main> fst newFocus
+Folder "root" [File "goat_yelling_like_man.wmv" "baaaaaa",File "pope_time.avi" "god bless",Folder "cspi" [File "ape_throwing_up.jpg" "bleargh",File "watermelon_smash.gif" "smash!!",File "skull_man(scary).bmp" "Yikes!"],File "dijon_poupon.doc" "best mustard",Folder "programs" [File "fartwizard.exe" "10gotofart",File "owl_bandit.dmg" "mov eax, h00t",File "not_a_virus.exe" "really not a virus",Folder "source code" [File "best_hs_prog.hs" "main = print (fix error)",File "random.hs" "main = print 4"]]]
+```
+
+現在のフォルダにアイテムを新規作成する関数
+
+```haskell
+fsNewFile :: FSItem -> FSZipper -> FSZipper
+fsNewFile item (Folder folderName items, bs) = (Folder folderName (item:items), bs)
+```
+
+作成してみる
+
+```
+*Main> newFocus = (myDisk, []) -: fsTo "pics" -: fsNewFile (File "heh.jpg" "lol") -: fsUp
+*Main> fst newFocus
+Folder "root" [File "goat_yelling_like_man.wmv" "baaaaaa",File "pope_time.avi" "god bless",Folder "pics" [File "heh.jpg" "lol",File "ape_throwing_up.jpg" "bleargh",File "watermelon_smash.gif" "smash!!",File "skull_man(scary).bmp" "Yikes!"],File "dijon_poupon.doc" "best mustard",Folder "programs" [File "fartwizard.exe" "10gotofart",File "owl_bandit.dmg" "mov eax, h00t",File "not_a_virus.exe" "really not a virus",Folder "source code" [File "best_hs_prog.hs" "main = print (fix error)",File "random.hs" "main = print 4"]]]
+```
+
+Haskell のデータ構造は Immutable である。
+そのため、旧バージョンのデータに何の問題もなくアクセスできる。
+Zipperを使ってそのImmutableなデータ構造の中を効率よく移動できるようになった。
+
+## 足元にご注意
+
+パターンマッチに失敗するなどして実行時エラーが出るのをそのままにしていた。
+Maybeモナドを使って失敗の可能性という文脈を追加する。
+
+二分木を処理するZipperをモナディック関数に変更する。
+
+```haskell
+
+```

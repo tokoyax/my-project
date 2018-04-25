@@ -24,25 +24,33 @@ freeTree =
             )
         )
 
-data Direction = L | R deriving (Show)
-type Directions = [Direction]
-
-changeToP :: Directions -> Tree Char -> Tree Char
-changeToP (L:ds) (Node x l r) = Node x (changeToP ds l) r
-changeToP (R:ds) (Node x l r) = Node x l (changeToP ds r)
-changeToP [] (Node _ l r)     = Node 'P' l r
-
-elemAt :: Directions -> Tree a -> a
-elemAt (L:ds) (Node _ l _) = elemAt ds l
-elemAt (R:ds) (Node _ _ r) = elemAt ds r
-elemAt [] (Node x _ _)     = x
-
-type Breadcrumbs = [Direction]
+data Crumb a = LeftCrumb a (Tree a) | RightCrumb a (Tree a) deriving (Show)
+type Breadcrumbs a = [Crumb a]
+type Zipper a = (Tree a, Breadcrumbs a)
 
 x -: f = f x
 
-goLeft :: (Tree a, Breadcrumbs) -> (Tree a, Breadcrumbs)
-goLeft (Node _ l _, bs) = (l, L:bs)
+goLeft :: Zipper a -> Maybe (Zipper a)
+goLeft (Node x l r, bs) = Just (l, LeftCrumb x r:bs)
+goLeft (Empty, _)       = Nothing
 
-goRight :: (Tree a, Breadcrumbs) -> (Tree a, Breadcrumbs)
-goRight (Node _ _ r, bs) = (r, R:bs)
+goRight :: Zipper a -> Maybe (Zipper a)
+goRight (Node x l r, bs) = Just (r, RightCrumb x l:bs)
+goRight (Empty, _)       = Nothing
+
+goUp :: Zipper a -> Maybe (Zipper a)
+goUp (t, LeftCrumb x r:bs)  = Just (Node x t r, bs)
+goUp (t, RightCrumb x l:bs) = Just (Node x l t, bs)
+goUp (_, [])                = Nothing
+
+modify :: (a -> a) -> Zipper a -> Zipper a
+modify f (Node x l r, bs) = (Node (f x) l r, bs)
+modify f (Empty, bs)      = (Empty, bs)
+
+attach :: Tree a -> Zipper a -> Zipper a
+attach t (_, bs) = (t, bs)
+
+topMost :: Zipper a -> Zipper a
+topMost (t, []) = (t, [])
+topMost z       = let Just n = goUp z
+                  in topMost n
