@@ -407,5 +407,59 @@ Maybeモナドを使って失敗の可能性という文脈を追加する。
 二分木を処理するZipperをモナディック関数に変更する。
 
 ```haskell
+goLeft :: Zipper a -> Maybe (Zipper a)
+goLeft (Node x l r, bs) = Just (l, LeftCrumb x r:bs)
+goLeft (Empty, _)       = Nothing
+
+goRight :: Zipper a -> Maybe (Zipper a)
+goRight (Node x l r, bs) = Just (r, RightCrumb x l:bs)
+goRight (Empty, _)       = Nothing
+
+goUp :: Zipper a -> Maybe (Zipper a)
+goUp (t, LeftCrumb x r:bs)  = Just (Node x t r, bs)
+goUp (t, RightCrumb x l:bs) = Just (Node x l t, bs)
+goUp (_, [])                = Nothing
+
+modify :: (a -> a) -> Zipper a -> Zipper a
+modify f (Node x l r, bs) = (Node (f x) l r, bs)
+modify f (Empty, bs)      = (Empty, bs)
+
+attach :: Tree a -> Zipper a -> Zipper a
+attach t (_, bs) = (t, bs)
+
+topMost :: Zipper a -> Zipper a
+topMost (t, []) = (t, [])
+topMost z       = let Just n = goUp z
+                  in topMost n
+```
+
+移動系の関数についてMaybeを返すように変更
+
+実行
 
 ```
+*Main> goLeft (Empty, [])
+Nothing
+*Main> goLeft (Node 'A' Empty Empty, [])
+Just (Empty,[LeftCrumb 'A' Empty])
+```
+
+ちゃんとNothing, Justが返ってきている。
+
+連続で移動するためには、`-:` ではなく `>>=` を使う。
+
+```
+*Main> coolTree = Node 1 Empty (Node 3 Empty Empty)
+*Main> return (coolTree, []) >>= goRight
+Just (Node 3 Empty Empty,[RightCrumb 1 Empty])
+*Main> return (coolTree, []) >>= goRight >>= goRight
+Just (Empty,[RightCrumb 3 Empty,RightCrumb 1 Empty])
+*Main> return (coolTree, []) >>= goRight >>= goRight >>= goRight
+Nothing
+```
+
+ちゃんと失敗してる。
+
+## 所感
+
+Zipperが木構造などを扱うのに役立つというのはわかった。が、自分ではまだ書けない。
